@@ -20,11 +20,9 @@ from django.utils.translation import ungettext
 from seahub.auth.decorators import login_required
 import seaserv
 from seaserv import ccnet_threaded_rpc, seafserv_threaded_rpc, \
-    web_get_access_token, seafile_api, \
-    get_repo, get_group_repos, get_commits, is_group_user, \
-    get_group, get_group_members, create_repo, \
-    get_personal_groups, create_org_repo, get_org_group_repos, \
-    check_permission, is_passwd_set, remove_repo, \
+    web_get_access_token, seafile_api, get_repo, get_group_repos, get_commits, \
+    is_group_user, get_group, get_group_members, create_repo, \
+    get_org_group_repos, check_permission, is_passwd_set, remove_repo, \
     unshare_group_repo, get_file_id_by_path, post_empty_file, del_file
 from seaserv import seafile_api
 from pysearpc import SearpcError
@@ -48,7 +46,7 @@ from seahub.wiki.utils import clean_page_name
 from seahub.settings import SITE_ROOT, SITE_NAME
 from seahub.shortcuts import get_first_object_or_none
 from seahub.utils import render_error, render_permission_error, string2list, \
-    check_and_get_org_by_group, gen_file_get_url, get_file_type_and_ext, \
+    gen_file_get_url, get_file_type_and_ext, \
     calc_file_path_hash, is_valid_username, send_html_email, is_org_context
 from seahub.utils.file_types import IMAGE
 from seahub.utils.paginator import Paginator
@@ -184,7 +182,7 @@ def group_add(request):
             checked_groups = seaserv.get_org_groups_by_user(org_id, username)
         else:
             if request.cloud_mode:
-                checked_groups = get_personal_groups_by_user(username)
+                checked_groups = seaserv.get_personal_groups_by_user(username)
             else:
                 checked_groups = get_all_groups(-1, -1)
         for g in checked_groups:
@@ -213,14 +211,8 @@ def group_add(request):
 @login_required
 def group_list(request):
     """List user groups"""
-    username = request.user.username
-<<<<<<< HEAD
-    joined_groups = request.user.joined_groups
-=======
-
     joined_groups = get_user_groups(request)
 
->>>>>>> Squashed commit of the following:
     enabled_groups = get_wiki_enabled_group_list(
         in_group_ids=[x.id for x in joined_groups])
     enabled_group_ids = [ int(x.group_id) for x in enabled_groups ]
@@ -630,17 +622,13 @@ def group_members(request, group):
             }, context_instance=RequestContext(request))
 
 def send_group_member_add_mail(request, group, from_user, to_user):
-    t = loader.get_template('group/add_member_email.html')
     c = {
         'email': from_user,
         'to_email': to_user,
         'group': group,
-        'domain': RequestSite(request).domain,
-        'protocol': request.is_secure() and 'https' or 'http',
-        'site_name': SITE_NAME,
         }
-    send_mail(_(u'Your friend added you to a group at Seafile.'),
-              t.render(Context(c)), None, [from_user], fail_silently=False)
+    subject = _(u'You are invited to join a group on %s') % SITE_NAME
+    send_html_email(subject, 'group/add_member_email.html', c, None, [to_user])
 
 def ajax_add_group_member(request, group):
     """Add user to group in ajax.
@@ -700,25 +688,7 @@ def ajax_add_group_member(request, group):
 
             if is_group_user(group.id, email):
                 continue
-                
-<<<<<<< HEAD
-                if not is_registered_user(email):
-                    c = {
-                        'email': username,
-                        'to_email': email,
-                        'group': group,
-                        }
-                    try:
-                        subject = _(u'You are invited to join a group on %s') % SITE_NAME
-                        send_html_email(subject, 'group/add_member_email.html', c, None, [email])
 
-                        mail_sended_list.append(email)
-                    except Exception, e:
-                        logger.warn(e)
-
-                # Add user to group, unregistered user will see the group
-                # when he logs in.
-=======
             # Add user to group, unregistered user will see the group
             # when he logs in.
             try:
@@ -730,7 +700,6 @@ def ajax_add_group_member(request, group):
                                     content_type=content_type)
                 
             if not is_registered_user(email):
->>>>>>> Squashed commit of the following:
                 try:
                     send_group_member_add_mail(request, group,
                                                username, email)
@@ -1119,7 +1088,7 @@ def create_group_repo(request, group_id):
             return json_error(_(u'Failed to create'))
 
         try:
-            seafile_api.add_group_repo(repo_id, group.id, username, permisson)
+            seafile_api.add_group_repo(repo_id, group.id, username, permission)
         except SearpcError, e:
             logger.error(e)
             return json_error(_(u'Failed to create: internal error.'))
