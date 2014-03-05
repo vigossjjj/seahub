@@ -15,7 +15,8 @@ from django.template import RequestContext
 from django.utils.translation import ugettext as _
 
 import seaserv
-from seaserv import ccnet_threaded_rpc, get_emailusers, CALC_SHARE_USAGE
+from seaserv import ccnet_threaded_rpc, seafserv_threaded_rpc, get_emailusers,\
+    CALC_SHARE_USAGE
 from seaserv import seafile_api
 from pysearpc import SearpcError
 
@@ -511,11 +512,9 @@ def send_user_add_mail(request, email, password):
 def user_add(request):
     """Add a user"""
 
-    if not request.user.is_staff and not request.user.org['is_staff']:
+    if not request.user.is_staff:
         raise Http404
 
-    base_template = 'org_admin_base.html' if request.user.org else 'admin_base.html'
-    
     content_type = 'application/json; charset=utf-8'
     if request.method == 'POST':
         post_values = request.POST.copy()
@@ -530,14 +529,20 @@ def user_add(request):
             user = User.objects.create_user(email, password, is_staff=False,
                                             is_active=True)
             if request.user.org:
-                org_id = request.user.org['org_id']
-                url_prefix = request.user.org['url_prefix']
+                org_id = request.user.org.org_id
+                url_prefix = request.user.org.url_prefix
                 ccnet_threaded_rpc.add_org_user(org_id, email, 0)
-                if hasattr(settings, 'EMAIL_HOST'):
-                    send_user_add_mail(request, email, password)
-                    
-                return HttpResponseRedirect(reverse('org_useradmin',
-                                                    args=[url_prefix]))
+                if IS_EMAIL_CONFIGURED:
+                    try:
+                        send_user_add_mail(request, email, password)
+                        messages.success(request, _(u'Successfully added user %s. An email notification has been sent.') % email)
+                    except Exception, e:
+                        logger.error(str(e))
+                        messages.success(request, _(u'Successfully added user %s. An error accurs when sending email notification, please check your email configuration.') % email)
+                else:
+                    messages.success(request, _(u'Successfully added user %s.') % email)
+
+                return HttpResponse(json.dumps({'success': True}), content_type=content_type)
             else:
                 if IS_EMAIL_CONFIGURED:
                     if SEND_EMAIL_ON_ADDING_SYSTEM_MEMBER:
@@ -586,6 +591,35 @@ def sys_group_admin(request):
             'page_next': page_next,
             }, context_instance=RequestContext(request))
 
+@login_required
+@sys_staff_required
+def sys_org_admin(request):
+    orgs = ccnet_threaded_rpc.get_all_orgs(-1, -1)
+
+    return render_to_response('sysadmin/sys_org_admin.html', {
+            'orgs': orgs,
+            }, context_instance=RequestContext(request))
+
+@login_required
+@sys_staff_required
+def sys_org_info(request, org_id):
+    org_id = int(org_id)
+    org = ccnet_threaded_rpc.get_org_by_id(org_id)
+
+    org_users = ccnet_threaded_rpc.get_org_emailusers(org.url_prefix, -1, -1)
+    users_count = len(org_users)
+
+    # quota
+    total_quota = seafserv_threaded_rpc.get_org_quota(org_id)
+    quota_usage = seafserv_threaded_rpc.get_org_quota_usage(org_id)
+    
+    return render_to_response('sysadmin/sys_org_info.html', {
+            'org': org,
+            'users_count': users_count,
+            'total_quota': total_quota,
+            'quota_usage': quota_usage,
+            }, context_instance=RequestContext(request))
+
 
 @login_required
 @sys_staff_required
@@ -608,7 +642,7 @@ def sys_publink_admin(request):
         page_next = False
 
     for l in publinks:
-        if l.s_type == 'f':
+        if l.is_file_share_link():
             l.name = os.path.basename(l.path)
         else:
             l.name = os.path.dirname(l.path)
@@ -635,6 +669,15 @@ def user_search(request):
     users  = ccnet_threaded_rpc.search_emailusers(email_patt, -1, -1)
     last_logins = UserLastLogin.objects.filter(username__in=[x.email for x in users])
     for user in users:
+        try:
+            user.self_usage = seafile_api.get_user_self_usage(user.email)
+            user.share_usage = seafile_api.get_user_share_usage(user.email)
+            user.quota = seafile_api.get_user_quota(user.email)
+        except:
+            user.self_usage = -1
+            user.share_usage = -1
+            user.quota = -1
+        
         # populate user last login time
         user.last_login = None
         for last_login in last_logins:

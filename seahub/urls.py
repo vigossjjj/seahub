@@ -20,7 +20,8 @@ from seahub.views.sysadmin import sys_repo_admin, sys_user_admin, user_search,\
     sys_group_admin, user_info, user_add, user_remove, user_make_admin, \
     user_remove_admin, user_reset, user_activate, sys_publink_admin, \
     sys_repo_search, sys_repo_transfer, sys_list_orphan, user_deactivate, \
-    user_toggle_status, user_set_quota, sys_ldap_user_admin, sys_list_system
+    user_toggle_status, user_set_quota, sys_ldap_user_admin, sys_list_system,\
+    sys_org_admin, sys_org_info
 from seahub.views.ajax import *
 
 # Uncomment the next two lines to enable the admin:
@@ -115,6 +116,7 @@ urlpatterns = patterns('',
     url(r'^user/(?P<id_or_email>[^/]+)/shares/$', user_share_list, name='user_share_list'),
     url(r'^modules/toggle/$', toggle_modules, name="toggle_modules"),
     url(r'^download_client_program/$', TemplateView.as_view(template_name="download.html"), name="download_client"),
+    url(r'^choose_register/$', TemplateView.as_view(template_name="choose_register.html"), name="choose_register"),
 
     ### Ajax ###
     (r'^ajax/repo/(?P<repo_id>[-0-9a-f]{36})/remove/$', repo_remove),
@@ -157,6 +159,12 @@ urlpatterns = patterns('',
     url(r'^ajax/space_and_traffic/$', space_and_traffic, name='space_and_traffic'),
     url(r'^ajax/my-shared-and-group-repos/$', my_shared_and_group_repos, name='my_shared_and_group_repos'),
 
+    ### organizaion ###                      
+    url(r'^pubinfo/libraries/$', pubrepo, name='pubrepo'),
+    (r'^publicrepo/create/$', public_repo_create),
+    url(r'^pubinfo/groups/$', pubgrp, name='pubgrp'),
+    url(r'^pubinfo/users/$', pubuser, name='pubuser'),
+                       
     ### Apps ###
     (r'^api2/', include('seahub.api2.urls')),
     (r'^avatar/', include('seahub.avatar.urls')),
@@ -180,6 +188,8 @@ urlpatterns = patterns('',
     url(r'^sys/useradmin/$', sys_user_admin, name='sys_useradmin'),
     url(r'^sys/ldapuseradmin/$', sys_ldap_user_admin, name='sys_ldap_useradmin'),
     url(r'^sys/groupadmin/$', sys_group_admin, name='sys_group_admin'),
+    url(r'^sys/orgadmin/$', sys_org_admin, name='sys_org_admin'),
+    url(r'^sys/orgadmin/(?P<org_id>\d+)/$', sys_org_info, name='sys_org_info'),
     url(r'^sys/publinkadmin/$', sys_publink_admin, name='sys_publink_admin'),
     url(r'^sys/notificationadmin/', notification_list, name='notification_list'),
     url(r'^useradmin/add/$', user_add, name="user_add"),
@@ -206,13 +216,6 @@ if getattr(settings, 'CLOUD_MODE', False):
     urlpatterns += patterns('',
         (r'^demo/', demo),
     )
-else:
-    urlpatterns += patterns('',
-        url(r'^pubinfo/libraries/$', pubrepo, name='pubrepo'),
-        (r'^publicrepo/create/$', public_repo_create),
-        url(r'^pubinfo/groups/$', pubgrp, name='pubgrp'),
-        url(r'^pubinfo/users/$', pubuser, name='pubuser'),
-    )
 
 from seahub.utils import HAS_FILE_SEARCH
 if HAS_FILE_SEARCH:
@@ -227,12 +230,18 @@ if getattr(settings, 'ENABLE_PAYMENT', False):
         (r'^pay/', include('seahub_extra.pay.urls')),
     )
 
+
 if getattr(settings, 'ENABLE_SYSADMIN_EXTRA', False):
     from seahub_extra.sysadmin_extra.views import sys_login_admin
     urlpatterns += patterns('',
         url(r'^sys/loginadmin/', sys_login_admin, name='sys_login_admin'),
     )
-    
+
+if getattr(settings, 'MULTI_TENANCY', False):
+    urlpatterns += patterns('',
+        (r'^org/', include('seahub_extra.organizations.urls')),
+    )    
+
 # serve office converter static files
 from seahub.utils import HAS_OFFICE_CONVERTER
 if HAS_OFFICE_CONVERTER:
