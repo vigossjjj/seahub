@@ -12,6 +12,7 @@ import urllib2
 import chardet
 import logging
 import posixpath
+import re
 
 from django.core.cache import cache
 from django.contrib.sites.models import RequestSite
@@ -19,7 +20,7 @@ from django.contrib import messages
 from django.contrib.auth.hashers import check_password
 from django.core.urlresolvers import reverse
 from django.db.models import F
-from django.http import HttpResponse, Http404, HttpResponseRedirect
+from django.http import HttpResponse, Http404, HttpResponseRedirect, HttpResponseBadRequest, HttpResponseForbidden
 from django.shortcuts import render_to_response
 from django.template import RequestContext
 from django.template.loader import render_to_string
@@ -27,6 +28,7 @@ from django.utils.http import urlquote
 from django.utils.translation import ugettext as _
 from django.views.decorators.http import require_POST
 from django.template.defaultfilters import filesizeformat
+from django.views.decorators.csrf import csrf_exempt
 
 from seaserv import seafile_api
 from seaserv import get_repo, web_get_access_token, send_message, \
@@ -49,7 +51,7 @@ from seahub.utils import show_delete_days, render_error, \
     get_ccnetapplet_root, render_permission_error, \
     is_textual_file, show_delete_days, mkstemp, EMPTY_SHA1, HtmlDiff, \
     check_filename_with_rename, gen_inner_file_get_url, normalize_file_path, \
-    user_traffic_over_limit
+    user_traffic_over_limit, add_office_convert_task, do_md5
 from seahub.utils.file_types import (IMAGE, PDF, IMAGE, DOCUMENT, SPREADSHEET, MARKDOWN, \
                                          TEXT, SF, OPENDOCUMENT)
 from seahub.utils.star import is_file_starred
@@ -58,7 +60,7 @@ from seahub.forms import SharedLinkPasswordForm
 
 if HAS_OFFICE_CONVERTER:
     from seahub.utils import query_office_convert_status, query_office_file_pages, \
-        prepare_converted_html, OFFICE_PREVIEW_MAX_SIZE
+        prepare_converted_html, OFFICE_PREVIEW_MAX_SIZE, get_office_converted_page
 
 import seahub.settings as settings
 from seahub.settings import FILE_ENCODING_LIST, FILE_PREVIEW_MAX_SIZE, \
@@ -72,7 +74,7 @@ logger = logging.getLogger(__name__)
 def gen_path_link(path, repo_name):
     """
     Generate navigate paths and links in repo page.
-    
+
     """
     if path and path[-1] != '/':
         path += '/'
@@ -89,9 +91,9 @@ def gen_path_link(path, repo_name):
     if repo_name:
         paths.insert(0, repo_name)
         links.insert(0, '/')
-        
+
     zipped = zip(paths, links)
-    
+
     return zipped
 
 def get_file_content(file_type, raw_path, file_enc):
@@ -177,7 +179,7 @@ def get_file_view_path_and_perm(request, repo_id, obj_id, path):
 
 def handle_textual_file(request, filetype, raw_path, ret_dict):
     # encoding option a user chose
-    file_enc = request.GET.get('file_enc', 'auto') 
+    file_enc = request.GET.get('file_enc', 'auto')
     if not file_enc in FILE_ENCODING_LIST:
         file_enc = 'auto'
     err, file_content, encoding = get_file_content(filetype,
@@ -219,8 +221,6 @@ def handle_pdf(raw_path, obj_id, fileext, ret_dict):
         ret_dict['filetype'] = 'Unknown'
 
 def convert_md_link(file_content, repo_id, username):
-    import re
-
     def repl(matchobj):
         if matchobj.group(2):   # return origin string in backquotes
             return matchobj.group(2)
@@ -241,7 +241,7 @@ def convert_md_link(file_content, repo_id, username):
                 return a_tag % (href, link_alias)
             except (WikiDoesNotExist, WikiPageMissing):
                 a_tag = '''<p class="wiki-page-missing">%s</p>'''
-                return a_tag % (link_alias)  
+                return a_tag % (link_alias)
         elif filetype == IMAGE:
             # load image to current page
             path = "/" + link_name
@@ -254,7 +254,7 @@ def convert_md_link(file_content, repo_id, username):
             return '<img class="wiki-image" src="%s" alt="%s" />' % (gen_file_get_url(token, filename), filename)
         else:
             from seahub.base.templatetags.seahub_tags import file_icon_filter
-            
+
             # convert other types of filelinks to clickable links
             path = "/" + link_name
             icon = file_icon_filter(link_name)
@@ -282,7 +282,7 @@ def file_size_exceeds_preview_limit(file_size, file_type):
             return True, err
         else:
             return False, ''
-    
+
 @repo_passwd_set_required
 def view_file(request, repo_id):
     """
@@ -317,7 +317,7 @@ def view_file(request, repo_id):
                                                                   obj_id, path)
     if not user_perm:
         return render_permission_error(request, _(u'Unable to view file'))
-    
+
     # check if the user is the owner or not, for 'private share'
     is_repo_owner = seafile_api.is_repo_owner(username, repo.id)
 
@@ -367,7 +367,7 @@ def view_file(request, repo_id):
 
             if len(img_list) > 1:
                 img_list.sort(lambda x, y : cmp(x.lower(), y.lower()))
-                cur_img_index = img_list.index(u_filename) 
+                cur_img_index = img_list.index(u_filename)
                 if cur_img_index != 0:
                     img_prev = posixpath.join(parent_dir, img_list[cur_img_index - 1])
                 if cur_img_index != len(img_list) - 1:
@@ -398,7 +398,7 @@ def view_file(request, repo_id):
         g.avatar = grp_avatar(g.id, 20)
 
     """List repo groups"""
-    # Get groups this repo is shared.    
+    # Get groups this repo is shared.
     if request.user.org:
         org_id = request.user.org['org_id']
         repo_shared_groups = get_org_groups_by_repo(org_id, repo_id)
@@ -411,9 +411,9 @@ def view_file(request, repo_id):
         ctx['groups'] = groups
         repogrp_str = render_to_string("snippets/repo_group_list.html", ctx)
     else:
-        repogrp_str = '' 
-    
-    file_path_hash = hashlib.md5(urllib2.quote(path.encode('utf-8'))).hexdigest()[:12]            
+        repogrp_str = ''
+
+    file_path_hash = hashlib.md5(urllib2.quote(path.encode('utf-8'))).hexdigest()[:12]
 
     # fetch file contributors and latest contributor
     contributors, last_modified, last_commit_id = \
@@ -429,10 +429,12 @@ def view_file(request, repo_id):
     is_starred = is_file_starred(username, repo.id, path.encode('utf-8'), org_id)
 
     template = 'view_file_%s.html' % ret_dict['filetype'].lower()
-        
+
     search_repo_id = None
     if not repo.encrypted:
         search_repo_id = repo.id
+        
+    office_preview_token = ret_dict.get('office_preview_token', '')
     return render_to_response(template, {
             'repo': repo,
             'is_repo_owner': is_repo_owner,
@@ -469,6 +471,7 @@ def view_file(request, repo_id):
             'img_prev': img_prev,
             'img_next': img_next,
             'search_repo_id': search_repo_id,
+            'office_preview_token': office_preview_token,
             }, context_instance=RequestContext(request))
 
 def view_history_file_common(request, repo_id, ret_dict):
@@ -478,7 +481,7 @@ def view_history_file_common(request, repo_id, ret_dict):
         raise Http404
 
     path = request.GET.get('p', '/')
-    
+
     commit_id = request.GET.get('commit_id', '')
     if not commit_id:
         raise Http404
@@ -486,7 +489,7 @@ def view_history_file_common(request, repo_id, ret_dict):
     obj_id = request.GET.get('obj_id', '')
     if not obj_id:
         raise Http404
-    
+
     # construct some varibles
     u_filename = os.path.basename(path)
     current_commit = get_commit(repo.id, repo.version, commit_id)
@@ -538,8 +541,8 @@ def view_history_file_common(request, repo_id, ret_dict):
     ret_dict['current_commit'] = current_commit
     ret_dict['fileext'] = fileext
     ret_dict['raw_path'] = raw_path
-    if not ret_dict.has_key('filetype'):    
-        ret_dict['filetype'] = filetype 
+    if not ret_dict.has_key('filetype'):
+        ret_dict['filetype'] = filetype
     ret_dict['use_pdfjs'] = USE_PDFJS
 
     if not repo.encrypted:
@@ -551,7 +554,7 @@ def view_history_file(request, repo_id):
     view_history_file_common(request, repo_id, ret_dict)
     if not request.user_perm:
         return render_permission_error(request, _(u'Unable to view file'))
-        
+
     # generate file path navigator
     path = ret_dict['path']
     repo = ret_dict['repo']
@@ -573,7 +576,7 @@ def view_trash_file(request, repo_id):
     days = show_delete_days(request)
     ret_dict['basedir'] = basedir
     ret_dict['days'] = days
-    
+
     # generate file path navigator
     path = ret_dict['path']
     repo = ret_dict['repo']
@@ -581,14 +584,14 @@ def view_trash_file(request, repo_id):
 
     return render_to_response('view_trash_file.html', ret_dict,
                               context_instance=RequestContext(request), )
-    
+
 @repo_passwd_set_required
 def view_snapshot_file(request, repo_id):
     ret_dict = {}
     view_history_file_common(request, repo_id, ret_dict)
     if not request.user_perm:
         return render_permission_error(request, _(u'Unable to view file'))
-    
+
     # generate file path navigator
     path = ret_dict['path']
     repo = ret_dict['repo']
@@ -613,7 +616,7 @@ def view_shared_file(request, token):
     if not repo:
         raise Http404
 
-    path = fileshare.path.rstrip('/') # Normalize file path 
+    path = fileshare.path.rstrip('/') # Normalize file path
     obj_id = seafile_api.get_file_id_by_path(repo_id, path)
     if not obj_id:
         return render_error(request, _(u'File does not exist'))
@@ -700,7 +703,7 @@ def view_file_via_shared_dir(request, token):
     repo = get_repo(repo_id)
     if not repo:
         raise Http404
-    
+
     path = request.GET.get('p', '').rstrip('/')
     if not path:
         raise Http404
@@ -758,7 +761,7 @@ def view_file_via_shared_dir(request, token):
 
             if len(img_list) > 1:
                 img_list.sort(lambda x, y : cmp(x.lower(), y.lower()))
-                cur_img_index = img_list.index(filename) 
+                cur_img_index = img_list.index(filename)
                 if cur_img_index != 0:
                     img_prev = posixpath.join(parent_dir, img_list[cur_img_index - 1])
                 if cur_img_index != len(img_list) - 1:
@@ -810,7 +813,7 @@ def file_edit_submit(request, repo_id):
     username = request.user.username
     if check_repo_access_permission(repo_id, request.user) != 'rw':
         return error_json(_(u'Permission denied'))
-        
+
     repo = get_repo(repo_id)
     if not repo:
         return error_json(_(u'The library does not exist.'))
@@ -854,7 +857,7 @@ def file_edit_submit(request, repo_id):
             gid = int(request.GET.get('gid', 0))
         except ValueError:
             gid = 0
-        
+
         wiki_name = os.path.splitext(os.path.basename(path))[0]
         next = reverse('group_wiki', args=[gid, wiki_name])
     elif req_from == 'personal_wiki_page_edit' or req_from == 'personal_wiki_page_new':
@@ -911,7 +914,7 @@ def file_edit(request, repo_id):
     file_content = None
     encoding = None
     file_encoding_list = FILE_ENCODING_LIST
-    if filetype == TEXT or filetype == MARKDOWN or filetype == SF: 
+    if filetype == TEXT or filetype == MARKDOWN or filetype == SF:
         if repo.encrypted:
             repo.password_set = seafile_api.is_password_set(repo_id, request.user.username)
             if not repo.password_set:
@@ -992,18 +995,18 @@ def get_file_content_by_commit_and_path(request, repo_id, commit_id, path, file_
             return None, 'error when read file from httpserver: %s' % e
         return file_content, err
 
-@login_required    
+@login_required
 def text_diff(request, repo_id):
     commit_id = request.GET.get('commit', '')
     path = request.GET.get('p', '')
     u_filename = os.path.basename(path)
-    file_enc = request.GET.get('file_enc', 'auto') 
+    file_enc = request.GET.get('file_enc', 'auto')
     if not file_enc in FILE_ENCODING_LIST:
         file_enc = 'auto'
 
     if not (commit_id and path):
         return render_error(request, 'bad params')
-        
+
     repo = get_repo(repo_id)
     if not repo:
         return render_error(request, 'bad repo')
@@ -1022,7 +1025,7 @@ def text_diff(request, repo_id):
                                     repo_id, current_commit.id, path, file_enc)
     if err:
         return render_error(request, err)
-        
+
     prev_content, err = get_file_content_by_commit_and_path(request, \
                                     repo_id, prev_commit.id, path, file_enc)
     if err:
@@ -1042,7 +1045,7 @@ def text_diff(request, repo_id):
     search_repo_id = None
     if not repo.encrypted:
         search_repo_id = repo.id
-    
+
     return render_to_response('text_diff.html', {
         'u_filename':u_filename,
         'repo': repo,
@@ -1056,11 +1059,57 @@ def text_diff(request, repo_id):
     }, context_instance=RequestContext(request))
 
 ########## office related
-def office_convert_query_status(request):
+@require_POST
+@csrf_exempt
+def office_convert_add_task(request):
     if not HAS_OFFICE_CONVERTER:
         raise Http404
 
-    if not request.is_ajax():
+    content_type = 'application/json; charset=utf-8'
+
+    try:
+        sec_token = request.POST.get('sec_token')
+        file_id = request.POST.get('file_id')
+        doctype = request.POST.get('doctype')
+        raw_path = request.POST.get('raw_path')
+    except KeyError:
+        return HttpResponseBadRequest('invalid params')
+
+    if sec_token != do_md5(settings.SECRET_KEY):
+        return HttpResponseForbidden()
+
+    if len(file_id) != 40:
+        return HttpResponseBadRequest('invalid params')
+
+    resp = add_office_convert_task(file_id, doctype, raw_path, internal=True)
+    
+    return HttpResponse(json.dumps(resp), content_type=content_type)
+    
+def check_office_token(func):
+    '''Set the `office_convert_add_task` attr on the request object for office
+    preview related requests
+
+    '''
+    def newfunc(request, *args, **kwargs):
+        token = request.META.get('HTTP_X_SEAFILE_OFFICE_PREVIEW_TOKEN', '')
+        if token and len(token) != 32:
+            return HttpResponseForbidden()
+            
+        if not token:
+            token = request.GET.get('office_preview_token', '')
+            
+        request.office_preview_token = token
+            
+        return func(request, *args, **kwargs)
+        
+    return newfunc
+
+@check_office_token
+def office_convert_query_status(request, internal=False):
+    if not HAS_OFFICE_CONVERTER:
+        raise Http404
+
+    if not internal and not request.is_ajax():
         raise Http404
 
     content_type = 'application/json; charset=utf-8'
@@ -1070,25 +1119,48 @@ def office_convert_query_status(request):
     file_id = request.GET.get('file_id', '')
     if len(file_id) != 40:
         ret['error'] = 'invalid param'
+    elif request.office_preview_token != do_md5(file_id + settings.SECRET_KEY):
+        return HttpResponseForbidden()
     else:
         try:
-            d = query_office_convert_status(file_id)
-            if d.error:
-                ret['error'] = d.error
-            else:
-                ret['success'] = True
-                ret['status'] = d.status
+            ret = query_office_convert_status(file_id, internal=internal)
         except Exception, e:
             logging.exception('failed to call query_office_convert_status')
             ret['error'] = str(e)
-            
+
     return HttpResponse(json.dumps(ret), content_type=content_type)
 
-def office_convert_query_page_num(request):
+
+# valid static file path inclueds:
+# file.css
+# file.outline
+# 1.page
+# 2.page
+# ...
+_OFFICE_PAGE_PATTERN = re.compile(r'^([0-9a-f]{40})/([\d]+\.page|file\.css|file\.outline|index.html)$')
+@check_office_token
+def office_convert_get_page(request, path, internal=False):
     if not HAS_OFFICE_CONVERTER:
         raise Http404
 
-    if not request.is_ajax():
+    m = _OFFICE_PAGE_PATTERN.match(path)
+    if not m:
+        return HttpResponseForbidden()
+        
+    file_id = m.group(1)
+    if path.endswith('file.css'):
+        pass
+    else:
+        if request.office_preview_token != do_md5(file_id + settings.SECRET_KEY):
+            return HttpResponseForbidden()
+
+    return get_office_converted_page(request, path, file_id, internal=internal)
+
+@check_office_token
+def office_convert_query_page_num(request, internal=False):
+    if not HAS_OFFICE_CONVERTER:
+        raise Http404
+    if not internal and not request.is_ajax():
         raise Http404
 
     content_type = 'application/json; charset=utf-8'
@@ -1098,18 +1170,15 @@ def office_convert_query_page_num(request):
     file_id = request.GET.get('file_id', '')
     if len(file_id) != 40:
         ret['error'] = 'invalid param'
+    elif request.office_preview_token != do_md5(file_id + settings.SECRET_KEY):
+        return HttpResponseForbidden()
     else:
         try:
-            d = query_office_file_pages(file_id)
-            if d.error:
-                ret['error'] = d.error
-            else:
-                ret['success'] = True
-                ret['count'] = d.count
+            ret = query_office_file_pages(file_id, internal=internal)
         except Exception, e:
             logging.exception('failed to call query_office_file_pages')
             ret['error'] = str(e)
-            
+
     return HttpResponse(json.dumps(ret), content_type=content_type)
 
 ###### private file/dir shares
@@ -1126,7 +1195,7 @@ def view_priv_shared_file(request, token):
     repo = get_repo(repo_id)
     if not repo:
         raise Http404
-    
+
     username = request.user.username
     if username != pfs.from_user and username != pfs.to_user:
         raise Http404           # permission check
@@ -1138,7 +1207,7 @@ def view_priv_shared_file(request, token):
 
     filename = os.path.basename(path)
     filetype, fileext = get_file_type_and_ext(filename)
-    
+
     access_token = seafile_api.get_httpserver_access_token(repo.id, obj_id,
                                                            'view', username)
     raw_path = gen_file_get_url(access_token, filename)
