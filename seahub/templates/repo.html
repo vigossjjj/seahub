@@ -40,16 +40,147 @@
     {% if repo.enc_version == 2 and not server_crypto and repo.encrypted %}
     <div id="repo-file-list"></div>
     {% else %}
-    <script type="text/x-handlebars" data-template-name="index">
-        {{html}}
+    <div id="repo-file-list"></div>
+    {% verbatim %}
+    <script type="text/x-handlebars" data-template-name="xx">
+    {{{html}}}
+    </script>
+    <script type="text/x-handlebars" data-template-name="con">
+<div class="repo-file-list-topbar ovhd">
+    {{{path_html}}}
+    <div class="repo-op fright">
+        {{#if user_perm_is_rw}}
+        <button id="upload-file" class="op-btn"><span class="icon-upload-alt"></span>Upload</button>
+        <button id="add-new-dir" class="op-btn"><span class="icon-plus-sign-alt"></span>New Directory</button>
+            {{#unless browser_enc}}
+        <button id="add-new-file" class="op-btn"><span class="icon-plus-sign-alt"></span>New File</button>
+            {{/unless}}
+        {{/if}}
+
+        {{#if show_cur_dir_share_btn}}
+            {{{cur_dir_share_btn}}}
+        {{/if}}
+    </div>
+    <div id="repo-latest-commit" class="clear">
+        {{{cmt_html}}}
+    </div>
+</div>
+
+<table class="repo-file-list">
+    <tr>
+        <th class="select">
+            <span class="checkbox"><input type="checkbox" class="checkbox-orig" /></span>
+        </th>
+        <th class="star"></th>
+        <th class="dirent-icon"></th>
+        <th><span class="dirent-name">Name <span id="name-down" class="icon-caret-up cspt"></span> <span id="name-up" class="icon-caret-down cspt hide"></span></span></th>
+        <th class="dirent-size">Size</th>
+        <th class="dirent-update">Last Update <span id="time-up" class="icon-caret-up cspt hide"></span> <span id="time-down" class="icon-caret-down cspt"></span></th>
+        <th class="dirent-op">Operations</th>
+    </tr>
+    {{#each dirent in dir_list }}
+    <tr class="dir-item" data-name="{{dirent.obj_name}}" data-time="{{#if dirent.last_modified }}{{ dirent.last_modified }}{{else}}0{{/if}}">
+        <td class="select">
+            <span class="checkbox"><input type="checkbox" class="checkbox-orig" /></span>
+        </td>
+        <td class="star"></td>
+        <td class="dirent-icon"><img {{bind-attr src=folder_icon_url}} alt="Directory icon" /></td>
+        <td>
+            <span class="dirent-name"><a {{bind-attr href=dirent.view_link}} class="dir-link">{{ dirent.obj_name }}</a></span>
+        </td>
+
+        <td class="dirent-size"></td>
+        <td class="dirent-update">
+            {{#if dirent.last_modified}}
+            {{ dirent.last_update }}
+            {{else}}
+            Fetch failed
+            {{/if}}
+        </td>
+        <td class="dirent-op">
+            <div class="repo-file-op vh">
+                <div class="displayed-op">
+                    <a class="op dir-download" {{bind-attr href=dirent.dl_link}}>Download</a>
+                    {{#unless repo_encrypted }}
+                    <a class="op dir-share" href="#" data-link="{{ dirent.sharelink }}" data-token="{{ dirent.sharetoken }}" data-upload-link="{{ dirent.uploadlink }}" data-upload-token="{{ dirent.uploadtoken }}">Share</a>
+                    {{/unless}}
+                </div>
+                {{#if user_perm_is_rw}}
+                <img {{bind-attr src=more_op_icon_url}} title="More operations" alt="More operations" class="more-op-icon cspt" data="no-popup" />
+                <ul class="hidden-op hide">
+                    <li><a class="op dir-del" href="#">Delete</a></li>
+                    <li><a class="op dir-rename" href="#">Rename</a></li>
+                    <li><a class="op dir-mv" href="#">Move</a></li>
+                    <li><a class="op dir-cp" href="#">Copy</a></li>
+                </ul>
+                {{/if}}
+            </div>
+        </td>
+    </tr>
+    {{/each}}
+    {{#each dirent in file_list }}
+    <tr class="file-item" data-name="{{dirent.obj_name}}" data-time="{{#if dirent.last_modified}}{{ dirent.last_modified }}{{else }}0{{/if}}">
+        <td class="select">
+            <span class="checkbox"><input type="checkbox" class="checkbox-orig" /></span>
+        </td>
+        <td class="star alc">
+            {{#if dirent.starred }}
+            <span title="starred" class="icon-star file-star" data-status="starred"></span>
+            {{else}}
+            <span title="unstarred" class="icon-star-empty file-star" data-status="unstarred"></span>
+            {{/if}}
+        </td>
+        <td class="dirent-icon"><img {{bind-attr src=dirent.file_icon_url}} alt="File" /></td>
+        <td>
+            {{#if browser_enc}}
+            <span class="dirent-name">{{ dirent.obj_name }}</span>
+            {{else}}
+            <span class="dirent-name"><a class="normal" {{bind-attr href=dirent.view_link}}>{{ dirent.obj_name }}</a></span>
+            {{/if}}
+        </td>
+
+        <td class="dirent-size">{{ dirent.file_size}}</td>
+        <td class="dirent-update">
+            {{#if dirent.last_modified}}
+            {{dirent.last_update}}
+            {{else}}
+            Fetch failed
+            {{/if}}
+        </td>
+        <td class="dirent-op">
+            <div class="repo-file-op vh">
+                <div class="displayed-op">
+                    <a class="op file-download" {{bind-attr href=dirent.dl_link}} data-fileid="{{ dirent.props.obj_id }}">Download</a>
+                    {{#if user_perm_is_rw}}
+                    <a class="op file-update" href="#">Update</a>
+                    {{/if}}
+                    {{#unless repo_encrypted}}
+                    <a class="op file-share" href="#" data-link="{{ dirent.sharelink }}" data-token="{{ dirent.sharetoken }}">Share</a>
+                    {{/unless}}
+                </div>
+                {{# if user_perm_is_rw }}
+                <img {{bind-attr src=more_op_icon_url}} title="More Operations" alt="More Operations" class="more-op-icon cspt" data="no-popup" />
+                <ul class="hidden-op hide">
+                    <li><a class="op file-del" href="#">Delete</a></li>
+                    <li><a class="op file-rename" href="#">Rename</a></li>
+                    <li><a class="op file-mv" href="#">Move</a></li>
+                    <li><a class="op file-cp" href="#">Copy</a></li>
+                    <li><a class="op file-history" href="{{dirent.history_link}}">History</a></li>
+                </ul>
+                {{/if}}
+            </div>
+        </td>
+    </tr>
+    {{/each}}
+</table>
+{{#if dirent_more}}
+<img class="dirent-more loading-tip" {{bind-attr src=loading_icon_url}} alt="Loading..." data-start="{{more_start}}" />
+{{/if}}
     </script>
     <script type="text/x-handlebars">
-    <div id="repo-file-list">
-{{html}}
         {{outlet}}
-    </div>
     </script>
-        {#% include 'snippets/repo_dir_data.html' %#}
+    {% endverbatim %}
     {% endif %}
 
 {% endblock %}
@@ -60,20 +191,29 @@
 
 <script type="text/javascript">
 var App = Ember.Application.create({
+    // application template will be rendered into this element. default: before </body>
+    rootElement: '#repo-file-list',
     LOG_TRANSITIONS: true 
 }); 
 App.Router.reopen({
     rootURL: '{{SITE_ROOT}}repo/{{repo.id}}/'
 });
 App.Router.map(function() {
-    this.resource('application', { path: '/' });
+    this.resource('con', { path: '/' });
+    //this.resource('xx', { path: '/' });
 });
-App.ApplicationRoute = Ember.Route.extend({
+//App.ApplicationRoute = Ember.Route.extend({
+App.ConRoute = Ember.Route.extend({
     model: function() {
-        return Ember.$.getJSON('{% url 'repo_dir_data' repo.id %}?p=' + e("{{ path|safe }}")).then(function(data) { return data; });
-        //return {html: 'xx'};
+        return $.getJSON('{% url 'repo_dir_data' repo.id %}?p=' + e("{{ path|safe }}") + '&for_app=yes');
     }
 });
+App.XxRoute = Ember.Route.extend({
+    model: function() {
+        return $.getJSON('{% url 'repo_dir_data' repo.id %}?p=' + e("{{ path|safe }}"));
+    }
+});
+
 /*
 App.IndexRoute = Ember.Route.extend({
   beforeModel: function() {

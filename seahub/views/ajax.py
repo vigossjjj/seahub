@@ -10,6 +10,7 @@ from django.template import RequestContext
 from django.template.loader import render_to_string
 from django.utils.http import urlquote
 from django.utils.translation import ugettext as _
+from django.template.defaultfilters import filesizeformat
 
 import seaserv
 from seaserv import seafile_api, seafserv_rpc, is_passwd_set, \
@@ -37,6 +38,7 @@ from seahub.utils import check_filename_with_rename, EMPTY_SHA1, \
     get_repo_last_modify, gen_file_upload_url, is_org_context, \
     get_org_user_events, get_user_events
 from seahub.utils.star import star_file, unstar_file
+from seahub.base.templatetags.seahub_tags import translate_seahub_time, file_icon_filter
 
 # Get an instance of a logger
 logger = logging.getLogger(__name__)
@@ -278,6 +280,79 @@ def list_dir(request, repo_id):
     uploadlink = get_uploadlink(repo.id, username, path)
     dir_shared_upload_link = get_dir_shared_upload_link(uploadlink)
 
+    # for app
+    for_app = request.GET.get('for_app')
+    if for_app:
+        ret = {}
+        d_list = [] 
+        f_list = []
+        for d in dir_list:
+            d_ = {}
+            d_['obj_name'] = d.obj_name
+            d_['last_modified'] = d.last_modified
+            d_['last_update'] = translate_seahub_time(d.last_modified)
+            d_['view_link'] = d.view_link
+            d_['dl_link'] = d.dl_link
+            d_['sharelink'] = d.sharelink
+            d_['sharetoken'] = d.sharetoken
+            d_['uploadlink'] = d.uploadlink
+            d_['uploadtoken'] = d.uploadtoken
+            d_list.append(d_)
+
+        for f in file_list:
+            f_ = {}
+            f_['file_icon_url'] = settings.MEDIA_URL + 'img/file/' + file_icon_filter(f.obj_name)
+            f_['obj_name'] = f.obj_name
+            f_['last_modified'] = f.last_modified
+            f_['last_update'] = translate_seahub_time(f.last_modified)
+            f_['starred'] = f.starred
+            f_['view_link'] = f.view_link
+            f_['file_size'] = filesizeformat(f.file_size)
+            f_['dl_link'] = f.dl_link
+            f_['obj_id'] = f.props.obj_id
+            f_['sharelink'] = f.sharelink
+            f_['sharetoken'] = f.sharetoken
+            f_list.append(f_)
+
+        ret['path_html'] = render_to_string('snippets/repo_app_path.html', {'repo': repo, 'zipped': zipped,},
+                            context_instance=RequestContext(request))
+
+        ret['cmt_html'] = render_to_string('snippets/current_commit.html', {
+                        'repo': repo,
+                        'current_commit': head_commit,
+                        'info_commit': info_commit,
+                    }, context_instance=RequestContext(request))
+
+        if path != '/' and not repo.encrypted:
+            ret['show_cur_dir_share_btn'] = True 
+            ret['cur_dir_share_btn'] = render_to_string('snippets/repo_app_cur_dir_share_btn.html', { 
+                                            'repo': repo,
+                                            'path': path,
+                                            'dir_shared_link': dir_shared_link,
+                                            'fileshare': fileshare,
+                                            'dir_shared_upload_link': dir_shared_upload_link,
+                                            'uploadlink': uploadlink,
+                                        }, context_instance=RequestContext(request))
+        else:
+            ret['show_cur_dir_share_btn'] = False 
+
+        if repo.encrypted and repo.enc_version == 2 and not server_crypto:
+            ret['browser_enc'] = True
+        else:
+            ret['browser_enc'] = False
+
+        ret['dir_list'] = d_list
+        ret['file_list'] = f_list
+        ret['repo_encrypted'] = repo.encrypted 
+        ret['user_perm_is_rw'] = True if user_perm == 'rw' else False
+        ret['dirent_more'] = dirent_more
+        ret['more_start'] = more_start
+        ret['folder_icon_url'] = settings.MEDIA_URL + 'img/folder-icon-24.png'
+        ret['more_op_icon_url'] = settings.MEDIA_URL + 'img/dropdown-arrow.png'
+        ret['loading_icon_url'] = settings.MEDIA_URL + 'img/loading-icon.gif'
+
+        return HttpResponse(json.dumps(ret), content_type=content_type)
+  
     ctx = { 
         'repo': repo,
         'zipped': zipped,
