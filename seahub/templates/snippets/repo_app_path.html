@@ -1,0 +1,9 @@
+    <p class="path fleft">
+    {% for name, link in zipped %}
+    {% if forloop.first or not forloop.last %}
+    <a href="{{ SITE_ROOT }}repo/{{ repo.id }}/?p={{ link|urlencode }}" class="dir-link normal">{{ name }}</a> /    
+    {% else %}
+    <span id="cur-dir-name">{{ name }}</span> /
+    {% endif %}
+    {% endfor %}
+    </p>
