@@ -291,6 +291,24 @@ def repo(request, repo_id):
                     'force_server_crypto': FORCE_SERVER_CRYPTO,      
                     }, context_instance=RequestContext(request))
     
+@login_required    
+def lib(request, repo_id):
+    '''
+        For lib app
+    '''
+
+    repo = get_repo(repo_id)
+
+    if not repo:
+        raise Http404
+
+    path = get_path_from_request(request)
+
+    return render_to_response('lib.html', {
+        'repo': repo,
+        'path': path,
+        }, context_instance=RequestContext(request))
+
 @login_required
 def repo_history_view(request, repo_id):
     """View repo in history.

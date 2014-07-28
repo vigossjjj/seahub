@@ -1,0 +1,21 @@
+{% load i18n %}
+    <div id="repo-top">
+        <h2 class="hd">{{repo.props.name}}{% if user_perm == 'r' %} <span class="tip vam">({% trans "Read-Only" %})</span>{% endif %}</h2>
+            <div id="repo-basic-info">
+                <span class="desc" title="{{repo.props.desc}}">{{ repo.props.desc|truncatechars:25 }}</span>
+                <span class="size split">{% trans 'Size: ' %}{{ repo_size|filesizeformat }}</span>
+                {% if show_repo_download_button or show_repo_settings or user_perm == 'rw' %}
+                <span class="split">
+                    {% if show_repo_download_button %}
+                    <a href="{{ SITE_ROOT }}seafile_access_check/?repo_id={{repo.props.id}}" target="_blank">{% trans "Download" %}</a>
+                    {% endif %}
+                    {% if show_repo_settings %}
+                    <a id="repo-setting-btn" href="{% url 'repo_settings' repo.id %}" class="normal"><img class="link-icon vam" src="{{ MEDIA_URL }}img/setting.png" alt="" /><span class="vam">{% trans "Settings" %}</span></a>
+                    {% endif %}
+                    {% if user_perm == 'rw' %}
+                    <a id="recycle-btn" href="{% url 'repo_recycle_view' repo.id %}" class="normal"><img class="link-icon vam" src="{{ MEDIA_URL }}img/lib_trash.png" alt="" /><span class="vam">{% trans "Trash"%}</span></a>
+                    {% endif %}
+                </span>
+                {% endif %}
+            </div>
+    </div>

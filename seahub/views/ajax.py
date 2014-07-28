@@ -301,6 +301,23 @@ def list_dir(request, repo_id):
             f_['sharetoken'] = f.sharetoken
             f_list.append(f_)
 
+        repo_size = seafile_api.get_repo_size(repo.id)
+        if is_org_context(request):
+            repo_owner = seafile_api.get_org_repo_owner(repo.id)
+        else:
+            repo_owner = seafile_api.get_repo_owner(repo.id)
+        is_repo_owner = True if repo_owner == username else False
+        if is_repo_owner and not repo.is_virtual:
+            show_repo_settings = True
+        else:
+            show_repo_settings = False
+        ret['top_html'] = render_to_string('snippets/lib_top.html', {
+            'repo': repo,
+            'repo_size': repo_size,
+            'show_repo_settings': show_repo_settings,
+            'user_perm': user_perm,
+            }, context_instance=RequestContext(request))
+
         ret['path_html'] = render_to_string('snippets/repo_app_path.html', {'repo': repo, 'zipped': zipped,},
                             context_instance=RequestContext(request))
 
@@ -334,9 +351,6 @@ def list_dir(request, repo_id):
         ret['user_perm_is_rw'] = True if user_perm == 'rw' else False
         ret['dirent_more'] = dirent_more
         ret['more_start'] = more_start
-        ret['folder_icon_url'] = settings.MEDIA_URL + 'img/folder-icon-24.png'
-        ret['more_op_icon_url'] = settings.MEDIA_URL + 'img/dropdown-arrow.png'
-        ret['loading_icon_url'] = settings.MEDIA_URL + 'img/loading-icon.gif'
 
         return HttpResponse(json.dumps(ret), content_type=content_type)
   

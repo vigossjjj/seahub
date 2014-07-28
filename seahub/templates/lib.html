@@ -1,0 +1,602 @@
+{% extends "myhome_base.html" %}
+
+{% load seahub_tags avatar_tags i18n upload_tags %}
+
+{% block sub_title %}{{repo.name}} - {% endblock %}
+{% block extra_style %}
+<link rel="stylesheet" type="text/css" href="{{ MEDIA_URL }}css/select2.css?t=1393578720" />
+<style type="text/css">
+#footer { display:none; }
+{% if repo.encrypted and repo.enc_version == 2 and not server_crypto %}
+#main { display:none; }
+{% endif %}
+</style>    
+<!-- Shim to make HTML5 elements usable in older Internet Explorer versions -->
+<!--[if lt IE 9]><script src="{{ MEDIA_URL}}js/html5shiv.js"></script><![endif]-->
+{% endblock %}
+
+{% block main_panel %}
+{% verbatim %}
+<script type="text/x-handlebars" data-template-name="con">
+    {{{top_html}}}
+
+    <div id="repo-file-list">
+<div class="repo-file-list-topbar ovhd">
+    {{{path_html}}}
+    <div class="repo-op fright">
+        {{#if user_perm_is_rw}}
+        <button id="upload-file" class="op-btn" {{action 'uploadFile'}}><span class="icon-upload-alt"></span>Upload</button>
+        <button id="add-new-dir" class="op-btn" {{action 'newDir'}}><span class="icon-plus-sign-alt"></span>New Directory</button>
+            {{#unless browser_enc}}
+        <button id="add-new-file" class="op-btn" {{action 'newFile'}}><span class="icon-plus-sign-alt"></span>New File</button>
+            {{/unless}}
+        {{/if}}
+
+        {{#if show_cur_dir_share_btn}}
+            {{{cur_dir_share_btn}}}
+        {{/if}}
+    </div>
+    {{#view App.CmtView id="repo-latest-commit" class="clear"}}
+        {{{cmt_html}}}
+    {{/view}}
+</div>
+
+<table class="repo-file-list">
+    <tr>
+        <th class="select">
+            <span class="checkbox"><input type="checkbox" class="checkbox-orig" /></span>
+        </th>
+        <th class="star"></th>
+        <th class="dirent-icon"></th>
+        <th><span class="dirent-name">Name <span id="name-down" class="icon-caret-up cspt"></span> <span id="name-up" class="icon-caret-down cspt hide"></span></span></th>
+        <th class="dirent-size">Size</th>
+        <th class="dirent-update">Last Update <span id="time-up" class="icon-caret-up cspt hide"></span> <span id="time-down" class="icon-caret-down cspt"></span></th>
+        <th class="dirent-op">Operations</th>
+    </tr>
+    {{#each dirent in dir_list }}
+    {{#view App.DirView tagName="tr" class="dir-item"}}
+    <!--tr class="dir-item" data-name="{{dirent.obj_name}}" data-time="{{#if dirent.last_modified }}{{ dirent.last_modified }}{{else}}0{{/if}}"-->
+        <td class="select">
+            <span class="checkbox"><input type="checkbox" class="checkbox-orig" /></span>
+        </td>
+        <td class="star"></td>
+        <td class="dirent-icon"><img {{bind-attr src=folder_icon_url}} alt="Directory icon" /></td>
+        <td>
+            <span class="dirent-name"><a {{bind-attr href=dirent.view_link}} class="dir-link">{{ dirent.obj_name }}</a></span>
+        </td>
+
+        <td class="dirent-size"></td>
+        <td class="dirent-update">
+            {{#if dirent.last_modified}}
+            {{ dirent.last_update }}
+            {{else}}
+            Fetch failed
+            {{/if}}
+        </td>
+        <td class="dirent-op" {{bind-attr data-name=dirent.obj_name}}>
+            <div class="repo-file-op vh">
+                <div class="displayed-op">
+                    <a class="op dir-download" {{bind-attr href=dirent.dl_link}}>Download</a>
+                    {{#unless repo_encrypted }}
+                    <a class="op dir-share" href="#" {{bind-attr data-link=dirent.sharelink data-token=dirent.sharetoken data-upload-link=dirent.uploadlink data-upload-token=dirent.uploadtoken}}>Share</a>
+                    {{/unless}}
+                </div>
+                {{#if user_perm_is_rw}}
+                <img {{bind-attr src=more_op_icon_url}} title="More operations" alt="More operations" class="more-op-icon cspt" data="no-popup" />
+                <ul class="hidden-op hide">
+                    <li><a class="op dir-del" href="#">Delete</a></li>
+                    <li><a class="op dir-rename" href="#">Rename</a></li>
+                    <li><a class="op dir-mv" href="#">Move</a></li>
+                    <li><a class="op dir-cp" href="#">Copy</a></li>
+                </ul>
+                {{/if}}
+            </div>
+        </td>
+    <!--/tr-->
+    {{/view}}
+    {{/each}}
+    {{#each dirent in file_list }}
+    {{#view App.FileView tagName="tr" class="file-item"}}
+    <!--tr class="file-item" data-name="{{dirent.obj_name}}" data-time="{{#if dirent.last_modified}}{{ dirent.last_modified }}{{else }}0{{/if}}"-->
+        <td class="select">
+            <span class="checkbox"><input type="checkbox" class="checkbox-orig" /></span>
+        </td>
+        <td class="star alc">
+            {{#if dirent.starred }}
+            <span title="starred" class="icon-star file-star" data-status="starred"></span>
+            {{else}}
+            <span title="unstarred" class="icon-star-empty file-star" data-status="unstarred"></span>
+            {{/if}}
+        </td>
+        <td class="dirent-icon"><img {{bind-attr src=dirent.file_icon_url}} alt="File" /></td>
+        <td>
+            {{#if browser_enc}}
+            <span class="dirent-name">{{ dirent.obj_name }}</span>
+            {{else}}
+            <span class="dirent-name"><a class="normal" {{bind-attr href=dirent.view_link}}>{{ dirent.obj_name }}</a></span>
+            {{/if}}
+        </td>
+
+        <td class="dirent-size">{{ dirent.file_size}}</td>
+        <td class="dirent-update">
+            {{#if dirent.last_modified}}
+            {{dirent.last_update}}
+            {{else}}
+            Fetch failed
+            {{/if}}
+        </td>
+        <td class="dirent-op">
+            <div class="repo-file-op vh">
+                <div class="displayed-op">
+                    <a class="op file-download" {{bind-attr href=dirent.dl_link}} data-fileid="{{ dirent.props.obj_id }}">Download</a>
+                    {{#if user_perm_is_rw}}
+                    <a class="op file-update" href="#">Update</a>
+                    {{/if}}
+                    {{#unless repo_encrypted}}
+                    <a class="op file-share" href="#" {{bind-attr data-link=dirent.sharelink data-token=dirent.sharetoken}}>Share</a>
+                    {{/unless}}
+                </div>
+                {{# if user_perm_is_rw }}
+                <img {{bind-attr src=more_op_icon_url}} title="More Operations" alt="More Operations" class="more-op-icon cspt" data="no-popup" />
+                <ul class="hidden-op hide">
+                    <li><a class="op file-del" href="#">Delete</a></li>
+                    <li><a class="op file-rename" href="#">Rename</a></li>
+                    <li><a class="op file-mv" href="#">Move</a></li>
+                    <li><a class="op file-cp" href="#">Copy</a></li>
+                    <li><a class="op file-history" href="{{dirent.history_link}}">History</a></li>
+                </ul>
+                {{/if}}
+            </div>
+        </td>
+    <!--/tr-->
+    {{/view}}
+    {{/each}}
+</table>
+{{#if dirent_more}}
+<img class="dirent-more loading-tip" {{bind-attr src=loading_icon_url}} alt="Loading..." data-start="{{more_start}}" />
+{{/if}}
+</div>
+    </script>
+    <script type="text/x-handlebars">
+        {{outlet}}
+    </script>
+    {% endverbatim %}
+
+    <form id="add-new-dir-form" action="" method="post" class="hide">{% csrf_token %}
+        <h3>{% trans "New Directory" %}</h3>
+        <label>{% trans "Directory Name" %}</label><br /><!-- <br/> for ie 7 -->
+        <input type="text" name="name" value="" class="input" maxlength="{{max_file_name}}"/><br />
+        <p class="error hide"></p>
+        <input type="submit" value="{% trans "Submit" %}" class="submit" />
+        <button class="simplemodal-close">{% trans "Cancel" %}</button>
+    </form>
+    <form id="add-new-file-form" action="" method="post" class="hide">{% csrf_token %}
+        <h3>{% trans "New File" %}</h3>
+        <div id="featured-filetype">
+            <label>{% trans "Featured File Type" %}</label><br />
+            <button type="button" class="set-file-type" data-filetype="seaf" title="{% trans "Click to choose" %}">seaf</button> <span>{% trans "online Rich Text format." %}</span>
+            {% if LANGUAGE_CODE == 'zh-cn' %}
+            <a href="http://www.seafile.com/help/seaf/" target="_blank">{% trans 'Details' %}</a><br /> 
+            {% else %}
+            <a href="http://www.seafile.com/en/help/seaf/" target="_blank">{% trans 'Details' %}</a><br /> 
+            {% endif %}
+            <button type="button" class="set-file-type" data-filetype="md" title="{% trans "Click to choose" %}">markdown</button> <span>{% trans "simple markup format." %}</span>
+            {% if LANGUAGE_CODE == 'zh-cn' %}
+            <a href="http://www.seafile.com/help/markdown/" target="_blank">{% trans 'Details' %}</a>            
+            {% else %}
+            <a href="http://www.seafile.com/en/help/markdown/" target="_blank">{% trans 'Details' %}</a>            
+            {% endif %}
+        </div>
+        <label>{% trans "File Name" %}</label><br/>
+        <input type="text" name="name" value="" class="input" maxlength="{{max_file_name}}"/><br />
+        <p class="error hide"></p>
+        <input type="submit" value="{% trans "Submit"%}" class="submit" />
+        <button class="simplemodal-close">{% trans "Cancel"%}</button>
+    </form>
+    <div id="upload-file-dialog" class="hide">
+        <h3>{% trans "Upload Files" %}</h3>
+        {% if no_quota %}
+        <p class="error">{% trans "The owner of this library has run out of space." %}</p>
+        {% else %}
+        <form id="upload-file-form" enctype="multipart/form-data" method="post" action="">{% csrf_token %}
+            {% if repo.enc_version == 2 and not server_crypto and repo.encrypted %}
+            <input type="file" name="file" /><br />
+            <p class="error hide">{% trans "Please select a file at first." %}</p>
+            <input type="button" value="{% trans "Submit" %}" />
+            {% else %}
+            <input type="hidden" name="parent_dir" value="{{ path }}" />
+            <div class="row fileupload-buttonbar">
+                <div>
+                    <span class="fileinput-button vam">
+                        <span class="icon-plus"></span>
+                        <span>{% trans "Add Files" %}</span>
+                        <input type="file" name="file" multiple />
+                    </span>
+                    <button type="submit" class="start vam">
+                        <span class="icon-upload"></span>
+                        <span>{% trans "Start All" %}</span>
+                    </button>
+                    <button type="reset" class="cancel vam">
+                        <span class="icon-ban-circle"></span>
+                        <span>{% trans "Cancel All" %}</span>
+                    </button>
+                </div>
+                <ol class="tip">
+                    <li>{% trans "Drag & Drop is supported for Chrome, Safari 5.0+, Firefox 4.0+, IE 10.0+" %}</li>
+                    {% if max_upload_file_size %}
+                    <li>{% blocktrans with max_file_size=max_upload_file_size|filesizeformat %}File size should be smaller than {{ max_file_size }}{% endblocktrans %}</li>
+                    {% endif %}
+                </ol>
+                <div class="fileupload-progress fade">
+                    <div class="progress progress-success progres-striped active">
+                        <div class="bar" style="width:0%"></div>
+                    </div>
+                    <div class="progress-extended"></div>
+                </div>
+                <p class="saving-tip alc hide"><img src="{{MEDIA_URL}}img/loading-icon.gif" alt="" style="margin-right:5px;" class="vam" />{% trans "Saving..." %}</p>
+            </div>
+            <table class="table table-striped"><tbody class="files" data-toggle="modal-gallery" data-target="#modal-gallery"></tbody></table>
+           {% endif %}
+        </form>
+        {% endif %}
+    </div>
+    {% include "snippets/file_share_popup.html" %}
+
+{% endblock %}
+
+{% block extra_script %}
+<script src="{{ MEDIA_URL}}js/handlebars.js"></script>
+<script src="{{ MEDIA_URL}}js/ember.js"></script>
+{% if repo.enc_version == 2 and not server_crypto and repo.encrypted %}
+<script type="text/javascript" src="{{MEDIA_URL}}js/repo_crypto.js"></script>
+{% else %}
+{% upload_js %}
+<script src="{{ MEDIA_URL}}js/jquery.ui.widget.js"></script>
+<script src="{{ MEDIA_URL}}js/tmpl.min.js"></script>
+<script src="{{ MEDIA_URL }}js/jquery.iframe-transport.js"></script>
+<script src="{{ MEDIA_URL }}js/jquery.fileupload.js"></script>
+<script src="{{ MEDIA_URL }}js/jquery.fileupload-fp.js"></script>
+<script src="{{ MEDIA_URL }}js/jquery.fileupload-ui.js"></script>
+<script type="text/javascript">
+window.locale = { 
+    "fileupload": {
+        "errors": {
+            "maxFileSize": "{% trans "File is too big" %}",
+            "minFileSize": "{% trans "File is too small" %}",
+            "acceptFileTypes": "{% trans "Filetype not allowed" %}",
+            "maxNumberOfFiles": "{% trans "Max number of files exceeded" %}",
+            "uploadedBytes": "{% trans "Uploaded bytes exceed file size" %}",
+            "emptyResult": "{% trans "Empty file upload result" %}"
+        },  
+        "error": "{% trans "Error" %}",
+        "start": "{% trans "Start" %}",
+        "cancel": "{% trans "Cancel" %}",
+        "destroy": "{% trans "Delete" %}"
+    }   
+};
+</script>
+{% endif %}
+
+<script type="text/javascript">
+var App = Ember.Application.create({
+    // application template will be rendered into this element. default: before </body>
+    rootElement: '#main',
+    LOG_TRANSITIONS: true 
+}); 
+App.Router.reopen({
+    rootURL: '{{SITE_ROOT}}lib/{{repo.id}}/'
+});
+App.Router.map(function() {
+    this.resource('con', { path: '/' });
+});
+//App.ApplicationRoute = Ember.Route.extend({
+App.ConRoute = Ember.Route.extend({
+    model: function() {
+        return $.getJSON('{% url 'repo_dir_data' repo.id %}?p=' + e("{{ path|safe }}") + '&for_app=yes');
+    }
+});
+App.CmtView = Ember.View.extend({
+    didInsertElement: function () {
+        $('.lsch').unbind().click(function() {
+            listCommitDetails($(this).data('url'), $(this).data('time'));
+            return false;
+        }); 
+    }
+});
+var no_file_op_popup = true;
+var popup_tr = ''; // the tr which the shown popup belongs to
+$('#main-panel').removeClass('ovhd');
+App.DirView = Ember.View.extend({
+    // 'this': the View
+    // 'this.$()': the current <tr> 
+    mouseEnter: function () {
+        if (no_file_op_popup) {
+            this.$().addClass('hl').find('.repo-file-op').removeClass('vh');
+        }
+    },
+    mouseLeave: function () {
+        if (no_file_op_popup) {
+            this.$().removeClass('hl').find('.repo-file-op').addClass('vh');
+        }
+    },
+    didInsertElement: function () {
+        var context = this.$();
+        $('.more-op-icon', context).click(function() {
+            var icon = $(this),
+                hidden_op = icon.next();
+            //if (icon.attr('data')) {
+            if (hidden_op.hasClass('hide')) { // the popup is not shown
+                if (icon.position().left + icon.width() + hidden_op.outerWidth() < icon.parent().width()) {
+                    hidden_op.css({'left': icon.position().left + icon.width() + 5});
+                    if (icon.offset().top + hidden_op.height() <= $('#main').offset().top + $('#main').height()) {
+                        hidden_op.css('top', 6);
+                    } else {
+                        hidden_op.css('bottom', 2);
+                    }
+                } else {
+                    hidden_op.css({'right':0});
+                    if (icon.offset().top + hidden_op.height() <= $('#main').offset().top + $('#main').height()) {
+                        hidden_op.css('top', icon.position().top + icon.height() + 3);
+                    } else {
+                        hidden_op.css('bottom', icon.position().top + icon.height() + 3);
+                    }
+                }
+                hidden_op.removeClass('hide');
+                no_file_op_popup = false;
+                //$('.dirent-op').data('popup_tr', icon.parents('tr'));
+                popup_tr = icon.parents('tr');
+            } else {
+                hidden_op.addClass('hide');
+                no_file_op_popup = true;
+                //$('.dirent-op').data('popup_tr', '');
+                popup_tr = '';
+            }
+        });
+        $('.hidden-op li', context).hover(
+            function() {
+                $(this).css('background', '#eee');
+            },
+            function() {
+                $(this).css('background', '#fff');
+            }
+        );
+
+        //share
+        $('.file-share, .dir-share', context).click(function() {
+            var op = $(this), name, aj_urls, type;
+            name = op.parents('.dirent-op').attr('data-name');
+            var cur_path = "{{ path|safe }}";
+            aj_urls = {
+                'link': '{% url 'get_shared_link' %}?repo_id={{ repo.id }}&p=' + e(cur_path) + e(name),
+                'upload-link': '{% url 'get_shared_upload_link' %}?repo_id={{ repo.id }}&p=' + e(cur_path) + e(name)
+            };
+            if (op.hasClass('dir-share')) {
+                aj_urls['link'] += '&type=d';
+                type = 'd';
+            } else {
+                type = 'f';
+            }
+            showSharePopup(op, name, aj_urls, type, cur_path);
+            return false;
+        });
+        
+        // delete
+        $('.dir-del, .file-del', context).click(function() {
+            var dirent_name = $(this).parents('.dirent-op').attr('data-name'),
+                url_main;
+            var cur_path = "{{ path|safe }}";
+
+            if ($(this).hasClass('dir-del')) {
+                url_main = '{% url 'delete_dir' repo.id %}';
+            } else {
+                url_main = '{% url 'delete_file' repo.id %}';
+            }
+
+            $.ajax({
+                url: url_main + '?parent_dir=' + e(cur_path) + '&name=' + e(dirent_name),
+                dataType: 'json',
+                success: function(data) {
+                    if (data['success']) {
+                        context.remove();
+                        no_file_op_popup = true;// make other items can work normally when hover
+                        var msg = "{% trans "Successfully deleted %(name)s" %}";
+                        msg = msg.replace('%(name)s', dirent_name);
+                        feedback(msg, 'success'); 
+                        //updateCmt(); // how ??
+                    }
+                },
+                error: ajaxErrorHandler
+            });
+            return false;
+        });
+    }
+});
+App.FileView = Ember.View.extend({
+    mouseEnter: function () {
+        if (no_file_op_popup) {
+            this.$().addClass('hl').find('.repo-file-op').removeClass('vh');
+        }
+    },
+    mouseLeave: function () {
+        if (no_file_op_popup) {
+            this.$().removeClass('hl').find('.repo-file-op').addClass('vh');
+        }
+    } 
+});
+App.ApplicationView = Ember.View.extend({
+    didInsertElement: function () {
+        $(document).click(function(e) {
+            var target =  e.target || event.srcElement;
+            //var popup_tr = $('.dirent-op').data('popup_tr');
+
+            if (!no_file_op_popup &&
+                !$('.more-op-icon, .hidden-op').is(target) &&
+                !$('.hidden-op').find('*').is(target)) {
+                $('.hidden-op').addClass('hide');
+                $('.more-op-icon').attr('data', 'no-popup');
+                no_file_op_popup = true;
+                if (!popup_tr.find('*').is(target)) {
+                    popup_tr.removeClass('hl').find('.repo-file-op').addClass('vh'); // clicked place: the first tr, place out of the table
+                    $('.dirent-op').data('popup_tr', '');
+                    $('tr:gt(0)').each(function() { // when other tr is clicked
+                        if ($(this).find('*').is(target)) {
+                            $(this).addClass('hl').find('.repo-file-op').removeClass('vh');
+                        }
+                    });
+                }
+            }
+        });
+    }
+});
+
+App.ConController = Ember.ObjectController.extend({
+    "folder_icon_url": '{{MEDIA_URL}}img/folder-icon-24.png',
+    "more_op_icon_url": '{{MEDIA_URL}}img/dropdown-arrow.png',
+    "loading_icon_url": '{{MEDIA_URL}}img/loading-icon.gif',
+
+    actions: {
+        uploadFile: function() {
+            //var cur_ctrl = this;
+            var upload_success = false;
+            $('#upload-file-dialog').modal({
+                focus:false,
+                containerCss: {width:600, height:$(window).height()/1.5},
+                onClose: function() {
+                    $.modal.close();
+                    if (upload_success) {
+                        location.reload();
+                        //cur_ctrl.transitionToRoute('con');
+                    }
+                }
+            });
+            $('.simplemodal-wrap').css({'overflow':'auto'}); // for ie
+
+            var form = $('#upload-file-form'),
+                parent_dir = $('input[name="parent_dir"]', form);
+            
+            parent_dir.val("{{ path|safe }}");
+            $.ajax({
+                url: '{% url 'get_file_op_url' repo.id %}?op_type=' + e('upload'),
+                cache: false,
+                dataType: 'json',
+                success: function(data) {
+                    form.attr('action', data['url']);
+
+                    // Initialize the jQuery File Upload widget, which needs to use form action
+                    form.fileupload({
+                        //singleFileUploads: false // using 1 request to upload all files of a selection
+                        sequentialUploads: true
+                    })
+                    .bind('fileuploaddone', function(e, data) {
+                        if (data.textStatus == 'success') {
+                            upload_success = true; 
+                        }
+                    });
+
+                    // Enable iframe cross-domain access via redirect option:
+                    form.fileupload(
+                        'option',
+                        'redirect',
+                        window.location.href.replace(/\/repo\/[-a-z0-9]{36}\/.*/, '/media/cors/result.html?%s')
+                    );
+                },
+                error: ajaxErrorHandler
+            });
+
+        },
+        newDir: function() {
+            $('#add-new-dir-form').modal();
+            $('#simplemodal-container').css({'height':'auto'});
+            $('#add-new-dir-form').submit(function() {
+                var form = $(this),
+                form_id = form.attr('id');
+
+                var dirent_name = $.trim(form.find('input[name="name"]').val());
+                if (!dirent_name) {
+                    apply_form_error(form_id, "{% trans "It is required." %}");
+                    return false;
+                }
+                ajax_form_post({
+                    'form': form,
+                    'post_url': '{% url 'new_dir' repo.id %}?parent_dir=' + e("{{ path|safe }}"),
+                    'post_data': {'dirent_name':dirent_name},
+                    'after_op_success': function() {
+                        location.reload(); // different from before
+                    },
+                    'form_id': form_id
+                });
+                return false;
+            }); 
+        },
+        newFile: function() {
+            $('#add-new-file-form').modal({appendTo:'#main', focus:false, containerCss:{'padding':'20px 25px'}});
+            $('#simplemodal-container').css({'height':'auto'});
+            $('.set-file-type').click(function() {
+                    var file_name = $('#add-new-file-form input[name="name"]');
+                    file_name.val('.' + $(this).data('filetype'));
+                    setCaretPos(file_name[0], 0);
+                    file_name.focus();
+            });
+            $('#add-new-file-form').submit(function() {
+                var form = $(this),
+                    form_id = form.attr('id');
+                var dirent_name = $.trim(form.find('input[name="name"]').val());
+
+                if (!dirent_name) {
+                    apply_form_error(form_id, "{% trans "It is required." %}");
+                    return false;
+                }
+                // if it has an extension, make sure it has a name
+                if (dirent_name.lastIndexOf('.') != -1 && dirent_name.substr(0, dirent_name.lastIndexOf('.')).length == 0) {
+                    apply_form_error(form_id, "{% trans "Only an extension there, please input a name." %}");
+                    return false;
+                }
+                ajax_form_post({
+                    'form': form,
+                    'post_url': '{% url 'new_file' repo.id %}?parent_dir=' + e("{{ path|safe }}"),
+                    'post_data': {'dirent_name':dirent_name},
+                    'after_op_success': function(data) {
+                        location.href = '{% url 'repo_view_file' repo.id %}?p=' + e("{{ path|safe }}") + e(data['name']);
+                    },
+                    'form_id': form_id
+                });
+                return false;
+            });
+        }
+    }
+});
+function ajax_form_post(params) {// params: {}
+    var form = params.form,
+        post_url = params.post_url,
+        post_data = params.post_data,
+        after_op_success = params.after_op_success,
+        form_id = params.form_id;
+
+    var submit_btn = form.children('input[type="submit"]');  
+    disable(submit_btn);
+    $.ajax({
+        url: post_url,
+        type: 'POST',
+        dataType: 'json',
+        beforeSend: prepareCSRFToken,
+        data: post_data,
+        success: function(data) { if (data['success']) {
+                after_op_success(data);
+            }
+        },
+        error: function(xhr, textStatus, errorThrown) {
+            var err;
+            if (xhr.responseText) {
+                err = $.parseJSON(xhr.responseText).error;
+            } else {
+                err = "{% trans "Failed. Please check the network." %}";
+            }
+            apply_form_error(form_id, err);
+            enable(submit_btn);
+        }
+    });
+}
+{% include "snippets/list_commit_detail.html" %}
+{% include "snippets/shared_link_js.html" %}
+</script>
+{% endblock %}
