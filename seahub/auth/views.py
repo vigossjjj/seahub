@@ -23,6 +23,7 @@ from seahub.auth.forms import AuthenticationForm, CaptchaAuthenticationForm
 from seahub.auth.forms import PasswordResetForm, SetPasswordForm, PasswordChangeForm
 from seahub.auth.tokens import default_token_generator
 from seahub.base.accounts import User
+from seahub.options.models import UserOptions
 from seahub.utils import is_ldap_user
 from seahub.utils.ip import get_remote_ip
 from seahub.settings import USER_PASSWORD_MIN_LENGTH, \
@@ -347,10 +348,17 @@ def password_change(request, template_name='registration/password_change_form.ht
     if is_ldap_user(request.user):
         messages.error(request, _("Can not update password, please contact LDAP admin."))
 
+    username = request.user.username
+    force_change_pwd = UserOptions.objects.is_force_change_pwd_set(username)
+
     if request.method == "POST":
         form = password_change_form(user=request.user, data=request.POST)
         if form.is_valid():
             form.save()
+            if force_change_pwd:
+                UserOptions.objects.unset_force_change_pwd(username)
+                messages.success(request, _("Successfully change password."))
+                return HttpResponseRedirect(reverse("myhome"))
             return HttpResponseRedirect(post_change_redirect)
     else:
         form = password_change_form(user=request.user)
@@ -360,6 +368,7 @@ def password_change(request, template_name='registration/password_change_form.ht
         'min_len': USER_PASSWORD_MIN_LENGTH,
         'strong_pwd_required': USER_STRONG_PASSWORD_REQUIRED,
         'level': USER_PASSWORD_STRENGTH_LEVEL,
+        'force_change_pwd': force_change_pwd,
     }, context_instance=RequestContext(request))
 
 def password_change_done(request, template_name='registration/password_change_done.html'):

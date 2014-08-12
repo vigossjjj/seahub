@@ -17,6 +17,10 @@ KEY_SUB_LIB = "sub_lib"
 VAL_SUB_LIB_ENABLED = "1"
 VAL_SUB_LIB_DISABLED = "0"
 
+KEY_FORCE_CHANGE_PWD = "force_change_pwd"
+VAL_FORCE_CHANGE_PWD_SET = "1"
+VAL_FORCE_CHANGE_PWD_UNSET = "0"
+
 KEY_DEFAULT_REPO = "default_repo"
 
 class CryptoOptionNotSetError(Exception):
@@ -116,6 +120,41 @@ class UserOptionsManager(models.Manager):
         except UserOptions.DoesNotExist:
             # Assume ``user_guide`` is enabled if this optoin is not set.
             return True        
+
+    def set_force_change_pwd(self, username):
+        """ Set value to ``True`` if user was added by admin, or his(her) password
+        has been reseted
+
+        Arguments:
+        - `self`:
+        - `username`:
+        """
+        return self.set_user_option(username, KEY_FORCE_CHANGE_PWD,
+                                    VAL_FORCE_CHANGE_PWD_SET)
+
+    def unset_force_change_pwd(self, username):
+        """ Set value to ``False`` after user change his(her) password
+
+        Arguments:
+        - `self`:
+        - `username`:
+        """
+        return self.set_user_option(username, KEY_FORCE_CHANGE_PWD,
+                                    VAL_FORCE_CHANGE_PWD_UNSET)
+
+    def is_force_change_pwd_set(self, username):
+        """
+
+        Arguments:
+        - `self`:
+        - `username`:
+        """
+        try:
+            user_option = super(UserOptionsManager, self).get(
+                email=username, option_key=KEY_FORCE_CHANGE_PWD)
+            return bool(int(user_option.option_val))
+        except UserOptions.DoesNotExist:
+            return False
 
     def enable_sub_lib(self, username):
         """

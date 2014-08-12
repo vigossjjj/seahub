@@ -29,6 +29,7 @@ from seahub.views import get_system_default_repo_id
 from seahub.forms import SetUserQuotaForm, AddUserForm, BatchAddUserForm
 from seahub.profile.models import Profile, DetailedProfile
 from seahub.share.models import FileShare
+from seahub.options.models import UserOptions
 
 import seahub.settings as settings
 from seahub.settings import INIT_PASSWD, SITE_NAME, \
@@ -565,6 +566,7 @@ def user_reset(request, user_id):
             new_password = INIT_PASSWD
         user.set_password(new_password)
         user.save()
+        UserOptions.objects.set_force_change_pwd(user.username)
 
         if IS_EMAIL_CONFIGURED:
             if SEND_EMAIL_ON_RESETTING_USER_PASSWD:
@@ -631,6 +633,7 @@ def user_add(request):
                                         is_active=True)
         if user:
             User.objects.update_role(email, role)
+            UserOptions.objects.set_force_change_pwd(email)
 
         if request.user.org:
             org_id = request.user.org.org_id

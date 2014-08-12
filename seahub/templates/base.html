@@ -40,6 +40,7 @@
                 {% block nav %}{% endblock %}
 
                 {% if request.user.is_authenticated %}
+                {% if not force_change_pwd %}
                 <div class="fright">
                 {% if has_file_search %}
                     {% include 'snippets/search_form.html' %}
@@ -89,7 +90,8 @@
                     </div>
                     {% endif %}
                 </div>
-            </div>
+                </div>
+                {% endif %}
                 {% endif %}
             </div>
         </div>

@@ -1,5 +1,9 @@
 from django.contrib import auth
 from django.core.exceptions import ImproperlyConfigured
+from django.http import HttpResponseRedirect
+from django.core.urlresolvers import reverse
+from seahub.options.models import UserOptions
+from seahub.settings import MEDIA_URL
 
 
 class LazyUser(object):
@@ -16,6 +20,21 @@ class AuthenticationMiddleware(object):
         request.__class__.user = LazyUser()
         return None
 
+class ForceChangePasswordMiddleware(object):
+    """
+    Redirects request from an authenticated user to the password change
+    page when user(who was added by admin or password has been reseted)
+    login for the first time.  Must be placed after ``AuthenticationMiddleware``
+    in the middleware list.
+    """
+    def process_view(self, request, *args, **kwargs):
+        username = request.user.username
+        redirect_to = reverse("auth_password_change")
+        if request.path[0:7] == MEDIA_URL:
+            return
+        if UserOptions.objects.is_force_change_pwd_set(username):
+            if request.path != redirect_to:
+                return HttpResponseRedirect(redirect_to)
 
 class RemoteUserMiddleware(object):
     """
